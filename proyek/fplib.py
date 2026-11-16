@@ -1,13 +1,16 @@
-"""fplib.py - Library fungsional: 18 fungsi murni (pure function).
+"""fplib.py - Library fungsional: 25 fungsi murni (pure function), 10 kelompok.
 
 Kelompok:
-1. Result  : ok, err, map_result, flat_map
-2. Komposisi: pipe, compose
-3. Validasi: validate, required, in_range, min_length
-4. Agregasi: group_by, sum_by
-5. Format  : format_rupiah
-6. Option  : some, none, get_or_else
-7. Tanggal : diff_days, is_overlap
+1.  Result    : ok, err, map_result, flat_map
+2.  Komposisi : pipe, compose
+3.  Validasi  : validate, required, in_range, min_length
+4.  Agregasi  : group_by, sum_by
+5.  Format    : format_rupiah
+6.  Option    : some, none, get_or_else
+7.  Tanggal   : diff_days, is_overlap
+8.  Pengurutan: sort_by, top_n
+9.  Predikat  : where, and_, not_
+10. Immutable : assoc, update_where
 
 Aturan: tanpa print/input, tanpa mutasi argumen, tanpa perulangan for/while.
 """
@@ -21,6 +24,7 @@ from typing import Any, Callable, Iterable, Mapping, Tuple
 Result = Tuple[str, Any]   # ("ok", nilai) | ("err", pesan)
 Option = Tuple[str, Any]   # ("some", nilai) | ("none", None)
 Rule = Callable[[Mapping[str, Any]], Result]
+Predicate = Callable[[Any], bool]
 
 
 # --------------------------------------------------------------- 1. Result
@@ -137,3 +141,41 @@ def diff_days(tanggal_awal: date | datetime, tanggal_akhir: date | datetime) -> 
 def is_overlap(mulai1: Any, selesai1: Any, mulai2: Any, selesai2: Any) -> bool:
     """True jika rentang [mulai1, selesai1) beririsan dengan [mulai2, selesai2)."""
     return mulai1 < selesai2 and mulai2 < selesai1
+
+
+# ------------------------------------------------- 8. pengurutan & peringkat
+def sort_by(items: Iterable[Any], key_fn: Callable[[Any], Any], descending: bool = False) -> tuple:
+    """Urutkan items menurut key_fn; hasilnya tuple baru, data asli tidak berubah."""
+    return tuple(sorted(items, key=key_fn, reverse=descending))
+
+
+def top_n(items: Iterable[Any], key_fn: Callable[[Any], Any], n: int) -> tuple:
+    """Ambil n item dengan nilai key_fn terbesar (tuple baru); n > jumlah data aman."""
+    return sort_by(items, key_fn, True)[:max(0, n)]
+
+
+# ------------------------------------------------- 9. penyaringan predikat
+def where(items: Iterable[Any], predicate: Predicate) -> tuple:
+    """Saring items yang memenuhi predicate; hasilnya tuple baru."""
+    return tuple(filter(predicate, items))
+
+
+def and_(*predicates: Predicate) -> Predicate:
+    """Gabungkan predikat dengan DAN: lolos jika semua predikat bernilai True."""
+    return lambda x: all(map(lambda p: p(x), predicates))
+
+
+def not_(predicate: Predicate) -> Predicate:
+    """Negasi predikat: lolos jika predicate bernilai False."""
+    return lambda x: not predicate(x)
+
+
+# --------------------------------------------- 10. pembaruan data immutable
+def assoc(record: Mapping[str, Any], key: str, value: Any) -> dict:
+    """Salin record menjadi dict BARU dengan satu field diubah/ditambah."""
+    return {**record, key: value}
+
+
+def update_where(items: Iterable[Any], predicate: Predicate, updater: Callable[[Any], Any]) -> tuple:
+    """Tuple baru: item yang lolos predicate diubah updater, sisanya tetap."""
+    return tuple(map(lambda x: updater(x) if predicate(x) else x, items))
