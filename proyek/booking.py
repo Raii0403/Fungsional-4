@@ -1,6 +1,7 @@
 """booking.py - Aplikasi 2: sewa ruang diskusi per jam.
 
-State: {"ruangan", "booking"}. Setiap operasi mengembalikan state BARU.
+Hasil operasi berupa tuple (True, data) atau (False, "pesan error").
+State: {"ruangan", "booking"}; setiap operasi mengembalikan state BARU.
 Jalankan sendiri: python booking.py
 """
 from __future__ import annotations
@@ -11,130 +12,62 @@ from typing import Any, Dict
 import data
 import fplib
 
-validasi_booking = fplib.validate(
-    fplib.required("anggota_id"), fplib.min_length("anggota_id", 4),
-    fplib.required("ruangan_id"), fplib.required("tanggal"),
-    fplib.in_range("jam_mulai", 8, 18), fplib.in_range("durasi", 1, 4),
-    fplib.in_range("peserta", 1, 20),
-)
+MAKS_HARI_DI_MUKA = 7
+
+ATURAN_BOOKING = [
+    (lambda d: d.get("anggota_id", "") != "", "ID anggota wajib diisi"),
+    (lambda d: d.get("ruangan_id", "") != "", "ID ruangan wajib diisi"),
+    (lambda d: d.get("tanggal") is not None, "Tanggal wajib diisi"),
+    (lambda d: d.get("jam_mulai", 0) >= 8, "Jam mulai paling awal 08:00"),
+    (lambda d: 1 <= d.get("durasi", 0) <= 4, "Durasi harus 1-4 jam"),
+    (lambda d: d.get("jam_mulai", 0) + d.get("durasi", 0) <= 21, "Booking harus selesai paling lambat 21:00"),
+]
 
 
 def cari_ruangan(daftar, ruangan_id: str):
-    """Cari ruangan berdasarkan ID; Option."""
-    hasil = fplib.where(daftar, lambda r: r["id"] == ruangan_id)
-    return fplib.some(hasil[0]) if hasil else fplib.none()
+    """Cari ruangan berdasarkan ID; None jika tidak ada."""
+    return fplib.find_by(daftar, lambda r: r["id"] == ruangan_id)
 
 
-def _waktu(d) -> tuple:
-    """Hitung (mulai, selesai) sebagai datetime."""
-    mulai = datetime.combine(d["tanggal"], time(d["jam_mulai"]))
-    return (mulai, mulai + timedelta(hours=d["durasi"]))
+def denda_belum_lunas(tagihan, anggota_id: str) -> int:
+    """Total denda anggota yang belum dibayar."""
+    belum = fplib.where(tagihan, lambda t: t["jenis"] == "denda", lambda t: t["anggota_id"] == anggota_id,
+                        lambda t: not t["lunas"])
+    return fplib.sum_by(belum, lambda t: t["jumlah"])
 
 
-# ------------------------------------------------------------ predikat ruangan
-def kapasitas_cukup(peserta: int):
-    """Pabrik predikat: kapasitas ruangan >= peserta."""
-    return lambda r: r["kapasitas"] >= peserta
-
-
-def kosong(state, mulai: datetime, selesai: datetime):
-    """Pabrik predikat: ruangan tidak punya booking beririsan pada rentang waktu."""
-    return lambda r: not fplib.where(state["booking"], fplib.and_(
-        lambda b: b["ruangan_id"] == r["id"],
-        lambda b: fplib.is_overlap(b["mulai"], b["selesai"], mulai, selesai)))
-
-
-def ruangan_tersedia(state, mulai: datetime, selesai: datetime, peserta: int) -> tuple:
-    """Ruangan yang kosong pada rentang waktu DAN kapasitasnya cukup."""
-    return fplib.where(state["ruangan"], fplib.and_(kapasitas_cukup(peserta), kosong(state, mulai, selesai)))
-
-
-# ------------------------------------------------------------------- rule
-def _cek_tanggal(hari_ini: date):
-    """Rule: tanggal booking tidak boleh sebelum hari ini."""
-    return lambda d: (fplib.ok(d) if fplib.diff_days(hari_ini, d["tanggal"]) >= 0
-                      else fplib.err("Tanggal booking sudah lewat"))
-
-
-def _cek_denda(tagihan):
-    """Rule: tolak anggota yang masih punya denda belum lunas."""
-    def rule(d):
-        belum = fplib.where(tagihan, fplib.and_(
-            lambda t: t["jenis"] == "denda", fplib.not_(lambda t: t["lunas"]),
-            lambda t: t["anggota_id"] == d["anggota_id"]))
-        total = fplib.sum_by(belum, lambda t: t["jumlah"])
-        return fplib.err(f"Masih ada denda {fplib.format_rupiah(total)}") if total > 0 else fplib.ok(d)
-    return rule
-
-
-def _cek_ruangan(state):
-    """Rule: ruangan harus ada, kapasitas cukup; sisipkan data ruangan."""
-    def rule(d):
-        r = fplib.get_or_else(cari_ruangan(state["ruangan"], d["ruangan_id"]), None)
-        if r is None:
-            return fplib.err(f"Ruangan {d['ruangan_id']} tidak ditemukan")
-        if not kapasitas_cukup(d["peserta"])(r):
-            return fplib.err(f"Kapasitas {r['nama']} hanya {r['kapasitas']} orang")
-        return fplib.ok({**d, "ruangan": r})
-    return rule
-
-
-def _cek_bentrok(state):
-    """Rule: jam tidak boleh beririsan dengan booking lain di ruangan yang sama."""
-    def rule(d):
-        mulai, selesai = _waktu(d)
-        bentrok = fplib.where(state["booking"], fplib.and_(
-            lambda b: b["ruangan_id"] == d["ruangan_id"],
-            lambda b: fplib.is_overlap(b["mulai"], b["selesai"], mulai, selesai)))
-        return fplib.err(f"Jadwal bentrok dengan booking {bentrok[0]['id']}") if bentrok else fplib.ok(d)
-    return rule
-
-
-# ----------------------------------------------------------------- proses
-def konfirmasi(rec: Dict[str, Any]) -> Dict[str, Any]:
-    """Salinan booking dengan status 'dikonfirmasi'."""
-    return fplib.assoc(rec, "status", "dikonfirmasi")
-
-
-def konfirmasi_booking(state, booking_id: str) -> Dict[str, Any]:
-    """State baru dengan satu booking dikonfirmasi."""
-    return {**state, "booking": fplib.update_where(state["booking"], lambda b: b["id"] == booking_id, konfirmasi)}
-
-
-def _simpan(state, d) -> tuple:
-    """Simpan booking berstatus 'menunggu' -> (state_baru, record)."""
-    mulai, selesai = _waktu(d)
-    rec = {"id": f"BK{len(state['booking']) + 1:03d}", "anggota_id": d["anggota_id"],
-           "ruangan_id": d["ruangan_id"], "status": "menunggu", "mulai": mulai, "selesai": selesai,
-           "biaya": d["ruangan"]["tarif_per_jam"] * d["durasi"]}
-    return ({**state, "booking": state["booking"] + (rec,)}, rec)
+def booking_bentrok(daftar, ruangan_id: str, mulai: datetime, selesai: datetime) -> tuple:
+    """Booking di ruangan yang sama yang jamnya bertabrakan dengan [mulai, selesai)."""
+    return fplib.where(daftar, lambda b: b["ruangan_id"] == ruangan_id,
+                       lambda b: mulai < b["selesai"] and b["mulai"] < selesai)
 
 
 def pesan_ruangan(state: Dict[str, Any], d: Dict[str, Any], tagihan, hari_ini: date):
-    """Proses booking -> ok((state_baru, record dikonfirmasi)) atau err(pesan)."""
-    return fplib.pipe(
-        d,
-        validasi_booking,
-        lambda r: fplib.flat_map(r, _cek_tanggal(hari_ini)),
-        lambda r: fplib.flat_map(r, _cek_denda(tagihan)),
-        lambda r: fplib.flat_map(r, _cek_ruangan(state)),
-        lambda r: fplib.flat_map(r, _cek_bentrok(state)),
-        lambda r: fplib.map_result(r, lambda x: _simpan(state, x)),
-        lambda r: fplib.map_result(r, lambda sr: (konfirmasi_booking(sr[0], sr[1]["id"]), konfirmasi(sr[1]))),
-    )
-
-
-# compose: ambil daftar booking, kelompokkan per ruangan, lalu jumlahkan biayanya
-pendapatan_per_ruangan = fplib.compose(
-    lambda grup: {rid: fplib.sum_by(items, lambda b: b["biaya"]) for rid, items in grup.items()},
-    lambda daftar: fplib.group_by(daftar, lambda b: b["ruangan_id"]),
-    lambda state: state["booking"],
-)
-
-
-def ruangan_terlaris(state, n: int) -> tuple:
-    """n ruangan dengan pendapatan terbesar -> tuple (id, pendapatan)."""
-    return fplib.top_n(tuple(pendapatan_per_ruangan(state).items()), lambda kv: kv[1], n)
+    """Proses booking -> (True, (state_baru, record)) atau (False, pesan)."""
+    galat = fplib.validate(d, ATURAN_BOOKING)
+    if galat:
+        return (False, "; ".join(galat))
+    if not 0 <= fplib.diff_days(hari_ini, d["tanggal"]) <= MAKS_HARI_DI_MUKA:
+        return (False, f"Booking hanya bisa untuk 0-{MAKS_HARI_DI_MUKA} hari ke depan")
+    denda = denda_belum_lunas(tagihan, d["anggota_id"])
+    if denda > 0:
+        return (False, f"Masih ada denda {fplib.format_rupiah(denda)}")
+    ruangan = cari_ruangan(state["ruangan"], d["ruangan_id"])
+    if ruangan is None:
+        return (False, f"Ruangan {d['ruangan_id']} tidak ditemukan")
+    mulai = datetime.combine(d["tanggal"], time(d["jam_mulai"]))
+    selesai = mulai + timedelta(hours=d["durasi"])
+    bentrok = booking_bentrok(state["booking"], ruangan["id"], mulai, selesai)
+    if bentrok:
+        return (False, f"Jadwal bentrok dengan booking {bentrok[0]['id']}")
+    bk_id = f"BK{len(state['booking']) + 1:03d}"
+    rec = {"id": bk_id, "anggota_id": d["anggota_id"], "ruangan_id": ruangan["id"], "status": "menunggu",
+           "mulai": mulai, "selesai": selesai,
+           "biaya": fplib.pipe(d["durasi"], lambda jam: jam * ruangan["tarif_per_jam"])}
+    sementara = state["booking"] + (rec,)
+    state_baru = {**state, "booking": fplib.update_where(sementara, lambda b: b["id"] == bk_id,
+                                                         {"status": "dikonfirmasi"})}
+    return (True, (state_baru, fplib.find_by(state_baru["booking"], lambda b: b["id"] == bk_id)))
 
 
 def jadwal_urut(state) -> tuple:
@@ -142,25 +75,24 @@ def jadwal_urut(state) -> tuple:
     return fplib.sort_by(state["booking"], lambda b: b["mulai"])
 
 
+def pendapatan_per_ruangan(state) -> Dict[str, int]:
+    """Total biaya sewa per ruangan."""
+    grup = fplib.group_by(state["booking"], lambda b: b["ruangan_id"])
+    return {rid: fplib.sum_by(items, lambda b: b["biaya"]) for rid, items in grup.items()}
+
+
 if __name__ == "__main__":
     print("=" * 50, "\n APLIKASI 2: BOOKING RUANGAN\n", "=" * 50, sep="")
     hari_ini = date(2026, 11, 11)
     s0 = {"ruangan": data.RUANGAN, "booking": data.BOOKING_AWAL}
-    mulai, selesai = datetime(2026, 11, 12, 9), datetime(2026, 11, 12, 11)
-    print("Ruangan kosong 12 Nov 09-11 untuk 8 orang:",
-          tuple(map(lambda r: r["nama"], ruangan_tersedia(s0, mulai, selesai, 8))))
-    print("Cari ruangan R99 (Option):", fplib.get_or_else(cari_ruangan(data.RUANGAN, "R99"), "tidak ditemukan"))
-
-    print("\n[GAGAL] Budi (punya denda) memesan R01")
-    print(" ", pesan_ruangan(s0, {"anggota_id": "A002", "ruangan_id": "R01", "tanggal": date(2026, 11, 13),
-                                  "jam_mulai": 10, "durasi": 2, "peserta": 4}, data.TAGIHAN_AWAL, hari_ini))
-    print("[GAGAL] Citra memesan R01 jam 10 (bentrok dengan BK001)")
-    print(" ", pesan_ruangan(s0, {"anggota_id": "A003", "ruangan_id": "R01", "tanggal": date(2026, 11, 12),
-                                  "jam_mulai": 10, "durasi": 2, "peserta": 4}, data.TAGIHAN_AWAL, hari_ini))
-    print("[BERHASIL] Citra memesan R01 jam 13 selama 2 jam")
-    _, (s1, bk) = pesan_ruangan(s0, {"anggota_id": "A003", "ruangan_id": "R01", "tanggal": date(2026, 11, 12),
-                                     "jam_mulai": 13, "durasi": 2, "peserta": 4}, data.TAGIHAN_AWAL, hari_ini)
+    base = {"anggota_id": "A003", "ruangan_id": "R01", "tanggal": date(2026, 11, 12), "jam_mulai": 13, "durasi": 2}
+    print("Cari ruangan R99 :", cari_ruangan(data.RUANGAN, "R99"))
+    print("\n[GAGAL] Budi (punya denda) memesan     :", pesan_ruangan(s0, {**base, "anggota_id": "A002"}, data.TAGIHAN_AWAL, hari_ini))
+    print("[GAGAL] Citra jam 10 (bentrok BK001)   :", pesan_ruangan(s0, {**base, "jam_mulai": 10}, data.TAGIHAN_AWAL, hari_ini))
+    print("[GAGAL] Tanggal terlalu jauh (H+14)    :", pesan_ruangan(s0, {**base, "tanggal": date(2026, 11, 25)}, data.TAGIHAN_AWAL, hari_ini))
+    print("[GAGAL] Jam di luar operasional        :", pesan_ruangan(s0, {**base, "jam_mulai": 20, "durasi": 3}, data.TAGIHAN_AWAL, hari_ini))
+    print("[BERHASIL] Citra memesan R01 jam 13-15")
+    _, (s1, bk) = pesan_ruangan(s0, base, data.TAGIHAN_AWAL, hari_ini)
     print(f"  {bk['id']} status {bk['status']}, biaya {fplib.format_rupiah(bk['biaya'])}")
     print("\nJadwal terurut :", tuple(map(lambda b: (b["id"], f"{b['mulai']:%d/%m %H:%M}"), jadwal_urut(s1))))
     print("Pendapatan     :", {k: fplib.format_rupiah(v) for k, v in pendapatan_per_ruangan(s1).items()})
-    print("Ruangan terlaris:", tuple(map(lambda kv: (kv[0], fplib.format_rupiah(kv[1])), ruangan_terlaris(s1, 1))))

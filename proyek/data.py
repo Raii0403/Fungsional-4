@@ -2,8 +2,8 @@
 from datetime import date, datetime
 
 DENDA_PER_HARI = 2000
+KATEGORI_KEUANGAN = frozenset({"denda", "sewa", "beli_buku", "operasional"})
 KATEGORI_PEMASUKAN = frozenset({"denda", "sewa"})
-KATEGORI_PENGELUARAN = frozenset({"beli_buku", "operasional"})
 PRIORITAS = ("tinggi", "sedang", "rendah")
 
 ANGGOTA = (
@@ -13,16 +13,16 @@ ANGGOTA = (
 )
 
 BUKU = (
-    {"id": "B001", "judul": "Pemrograman Fungsional", "kategori": "Komputer", "status": "tersedia", "jumlah_pinjam": 12},
-    {"id": "B002", "judul": "Struktur Data", "kategori": "Komputer", "status": "tersedia", "jumlah_pinjam": 8},
-    {"id": "B003", "judul": "Laskar Pelangi", "kategori": "Novel", "status": "tersedia", "jumlah_pinjam": 20},
-    {"id": "B004", "judul": "Sejarah Indonesia", "kategori": "Sejarah", "status": "tersedia", "jumlah_pinjam": 5},
-    {"id": "B005", "judul": "Bumi Manusia", "kategori": "Novel", "status": "tersedia", "jumlah_pinjam": 15},
+    {"id": "B001", "judul": "Pemrograman Fungsional", "kategori": "Komputer", "status": "tersedia"},
+    {"id": "B002", "judul": "Struktur Data", "kategori": "Komputer", "status": "tersedia"},
+    {"id": "B003", "judul": "Laskar Pelangi", "kategori": "Novel", "status": "tersedia"},
+    {"id": "B004", "judul": "Sejarah Indonesia", "kategori": "Sejarah", "status": "tersedia"},
+    {"id": "B005", "judul": "Bumi Manusia", "kategori": "Novel", "status": "tersedia"},
 )
 
 RUANGAN = (
-    {"id": "R01", "nama": "Ruang Diskusi A", "tarif_per_jam": 15000, "kapasitas": 6},
-    {"id": "R02", "nama": "Ruang Diskusi B", "tarif_per_jam": 20000, "kapasitas": 10},
+    {"id": "R01", "nama": "Ruang Diskusi A", "tarif_per_jam": 15000},
+    {"id": "R02", "nama": "Ruang Diskusi B", "tarif_per_jam": 20000},
 )
 
 BOOKING_AWAL = (
@@ -55,10 +55,10 @@ TRANSAKSI_AWAL = (
 )
 
 TUGAS_AWAL = (
-    {"id": "T001", "judul": "Inventaris rak buku B", "prioritas": "tinggi",
-     "mulai": date(2026, 11, 9), "deadline": date(2026, 11, 13), "otomatis": False, "selesai": False},
-    {"id": "T002", "judul": "Pesan buku baru", "prioritas": "sedang",
-     "mulai": date(2026, 11, 10), "deadline": date(2026, 11, 20), "otomatis": False, "selesai": False},
-    {"id": "T003", "judul": "Rapikan arsip lama", "prioritas": "rendah",
-     "mulai": date(2026, 11, 5), "deadline": date(2026, 11, 30), "otomatis": False, "selesai": False},
+    {"id": "T001", "judul": "Inventaris rak buku B", "prioritas": "tinggi", "estimasi_jam": 4,
+     "deadline": date(2026, 11, 13), "otomatis": False, "selesai": False},
+    {"id": "T002", "judul": "Pesan buku baru", "prioritas": "sedang", "estimasi_jam": 2,
+     "deadline": date(2026, 11, 20), "otomatis": False, "selesai": False},
+    {"id": "T003", "judul": "Rapikan arsip lama", "prioritas": "rendah", "estimasi_jam": 6,
+     "deadline": date(2026, 11, 30), "otomatis": False, "selesai": False},
 )
