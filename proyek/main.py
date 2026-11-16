@@ -246,5 +246,19 @@ def interaktif() -> None:
             return
 
 
+def pilih_mode() -> None:
+    """Tanyakan mode ke pengguna; tanpa terminal interaktif (mis. dipipe) langsung jalankan demo."""
+    if "--interaktif" in sys.argv:
+        return interaktif()
+    if "--demo" in sys.argv or not sys.stdin.isatty():
+        return demo()
+    print("Pilih mode:\n  1. Simulasi interaktif (Anda memasukkan data sendiri)\n  2. Demo skenario otomatis (Andi)")
+    try:
+        mode = input("Mode [1/2]: ").strip()
+    except EOFError:
+        mode = "2"
+    interaktif() if mode != "2" else demo()
+
+
 if __name__ == "__main__":
-    interaktif() if "--interaktif" in sys.argv else demo()
+    pilih_mode()
